@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagrama de Gantt: Sistema Web Pizza Steve</title>
+    <!-- Bootstrap CSS CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Añadimos html2canvas directamente para asegurar que esté disponible -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <style>
+        /* Estilos personalizados para asegurar que el diagrama se vea bien */
+        body { font-family: 'Inter', sans-serif; background-color: #0a1a2f; position: relative; z-index: 1; }
+        #bg-particles {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            background: linear-gradient(135deg, #0a1a2f 0%, #1e40af 100%);
+        }
+        .max-w-7xl, .gantt-chart, header, section, footer {
+            position: relative;
+            z-index: 2;
+        }
+        .gantt-chart {
+            background-color: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            overflow-x: auto;
+            min-width: 1000px; /* Asegura un ancho mínimo para la visualización de barras */
+            position: relative;
+            z-index: 1;
+        }
+        .task-bar {
+            height: 24px;
+            border-radius: 4px;
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            align-items: center;
+            padding-left: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+        .task-bar-crit { background-color: #f87171; color: white; box-shadow: 0 2px 4px rgba(248, 113, 129, 0.5); }
+        .task-bar-normal { background-color: #9ca3af; color: white; box-shadow: 0 2px 4px rgba(156, 163, 175, 0.5); }
+        .task-bar-milestone { 
+            width: 10px !important; 
+            height: 10px !important; 
+            background-color: #3b82f6; 
+            border-radius: 50%; 
+            position: absolute; 
+            transform: translate(-50%, -50%); 
+            z-index: 20;
+            box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.3); /* Efecto de anillo para hito */
+        }
+        .timeline-container { 
+            display: grid; 
+            grid-template-columns: 200px repeat(12, 1fr); /* 200px para el nombre de la tarea, 12 columnas para las 12 semanas */
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .timeline-header, .timeline-cell {
+            padding: 8px;
+            text-align: center;
+            font-weight: 600;
+            border-right: 1px solid #f3f4f6;
+        }
+        .task-row {
+            padding: 12px 0;
+            display: grid;
+            grid-template-columns: 200px repeat(12, 1fr);
+            position: relative;
+            min-height: 45px;
+        }
+        .task-name {
+            font-weight: 500;
+            text-align: left;
+            padding-left: 10px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .phase-name {
+            grid-column: 1 / span 13; 
+            background-color: #f3f4f6;
+            padding: 5px 10px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+        /* Línea de hoy (Today Marker) */
+        .today-marker {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background-color: #ef4444; /* Rojo brillante */
+            /* Oculto por petición del usuario. Descomentar o eliminar esta línea para volver a mostrar el marcador */
+            display: none;
+            z-index: 50;
+            pointer-events: none;
+        }
+        /* Controles y botones del Gantt */
+        .gantt-controls { display:flex; gap:8px; align-items:center; }
+        .gantt-button { background: white; border: 1px solid #e5e7eb; padding:6px 10px; border-radius:8px; font-size:13px; cursor:pointer; box-shadow: 0 1px 2px rgba(15,23,42,0.06); transition: transform .12s, background-color .12s; }
+        .gantt-button:hover { transform: translateY(-2px); background-color: #f8fafc; }
+        /* Mejoras visuales y animación */
+        .task-row { transition: background-color .18s ease, opacity .25s ease, max-height .25s ease, padding .25s ease; overflow: visible; }
+        .task-bar { transition: width .6s cubic-bezier(.2,.9,.2,1), transform .18s ease, box-shadow .18s ease; }
+        .task-bar:hover { transform: translateY(-55%) scale(1.02); box-shadow: 0 8px 24px rgba(2,6,23,0.08); }
+        .task-bar.animate-from-zero { width: 0 !important; }
+        .task-row.hidden-by-phase { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; overflow: hidden; }
+        .phase-name { cursor: pointer; display:flex; align-items:center; justify-content:space-between; }
+        .phase-name .phase-toggle { font-size:12px; margin-left:8px; opacity:0.8; }
+
+        /* Estilos para barras de progreso y tooltips */
+        .task-bar { overflow: hidden; }
+        .progress-bar {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            background: rgba(255,255,255,0.2);
+            transition: width 0.3s ease;
+        }
+        .task-bar-crit .progress-bar { background: rgba(255,255,255,0.25); }
+        
+        /* Tooltip personalizado */
+        .tooltip {
+            position: absolute;
+            background: #1e293b;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            max-width: 300px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.25);
+            pointer-events: none;
+            opacity: 0;
+            transform: translateY(5px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            z-index: 100;
+        }
+        .tooltip.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .tooltip-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #94a3b8;
+        }
+        .tooltip-content {
+            margin-bottom: 6px;
+        }
+        .tooltip-footer {
+            font-size: 11px;
+            color: #94a3b8;
+            display: flex;
+            justify-content: space-between;
+        }
+        .tooltip-progress {
+            background: rgba(255,255,255,0.1);
+            height: 4px;
+            border-radius: 2px;
+            margin: 6px 0;
+        }
+        .tooltip-progress-bar {
+            height: 100%;
+            background: #38bdf8;
+            border-radius: 2px;
+            transition: width 0.2s ease;
+        }
+        
+        /* Botón de exportar */
+        .export-button {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .export-button:hover {
+            background: #f8fafc;
+            transform: translateY(-1px);
+        }
+        .export-button svg {
+            width: 16px;
+            height: 16px;
+            opacity: 0.7;
+        }
+
+        /* Fondo animado de partículas azul eléctrico */
+        #bg-particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            background: linear-gradient(135deg, #0a1a2f 0%, #1e40af 100%);
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <!-- Fondo animado de partículas azul eléctrico -->
+    <canvas id="bg-particles"></canvas>
+
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8 p-4 bg-blue-700 rounded-xl shadow-lg">
+            <h1 class="text-4xl font-extrabold text-white mb-2">Diagrama de Gantt: Pizza Steve</h1>
+            <p class="text-white font-light">Planificación del proyecto adaptada al ciclo SDLC de Kendall & Kendall. Duración total: 72 días (del 31/08/2025 al 10/11/2025).</p>
+        </header>
+
+        <section class="mb-8 p-4 border-0 rounded-4 shadow-lg" style="background: linear-gradient(135deg, #e3f0ff 60%, #f8fafc 100%);">
+            <h2 class="display-5 fw-bold text-primary mb-4" style="font-family: 'Montserrat', 'Inter', sans-serif; letter-spacing: 1px;">Visualización del Cronograma</h2>
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <div class="card border-0 shadow-sm bg-white text-dark">
+                        <div class="card-body p-3">
+                            <span class="fw-bold text-danger">Ruta Crítica:</span> Tareas que no pueden retrasarse.<br>
+                            <span class="fw-bold text-primary">Hito (Milestone):</span> Puntos clave de control o final de fase.<br>
+                            <span class="fw-bold text-secondary">Tareas Normales:</span> Tareas con margen de holgura.
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-0 shadow-sm bg-white text-dark">
+                        <div class="card-body p-3">
+                            <span class="fw-bold">Inicio:</span> <span class="text-primary">31/08/2025</span><br>
+                            <span class="fw-bold">Fin estimado:</span> <span class="text-primary">10/11/2025</span><br>
+                            <span class="fw-bold">Progreso general:</span> <span class="text-success" id="overall-progress">0</span>%
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 d-flex align-items-center justify-content-center">
+                    <div class="d-flex flex-column gap-2">
+                        <div class="btn-group mb-2" role="group">
+                            <button id="zoom-out" class="btn btn-outline-primary" title="Alejar">-</button>
+                            <button id="zoom-reset" class="btn btn-outline-primary" title="Resetear zoom">100%</button>
+                            <button id="zoom-in" class="btn btn-outline-primary" title="Acercar">+</button>
+                        </div>
+                        <button id="collapse-all" class="btn btn-outline-secondary mb-2" title="Colapsar/Expandir todas las fases">Colapsar/Expandir</button>
+                        <button id="export-chart" class="btn btn-outline-dark mb-2" title="Exportar como imagen">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="width:24px;height:24px;vertical-align:middle;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                            Exportar
+                        </button>
+                        <label class="form-check-label"><input id="toggle-today" type="checkbox" class="form-check-input me-2">Mostrar marcador de hoy</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contenedor del diagrama de Gantt generado por JS -->
+            <div class="mb-4 flex items-center justify-between">
+                <div class="text-sm text-gray-600">
+                    <div>Inicio: <strong id="project-start-text">31/08/2025</strong> — Fin estimado: <strong id="project-end-text">10/11/2025</strong></div>
+                    <div class="mt-1 text-xs text-gray-500">Progreso general: <strong id="overall-progress">0</strong>%</div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="gantt-controls mr-2">
+                        <button id="zoom-out" class="gantt-button" title="Alejar">-</button>
+                        <button id="zoom-reset" class="gantt-button" title="Resetear zoom">100%</button>
+                        <button id="zoom-in" class="gantt-button" title="Acercar">+</button>
+                    </div>
+                    <button id="collapse-all" class="gantt-button" title="Colapsar/Expandir todas las fases">Colapsar/Expandir</button>
+                    <button id="export-chart" class="gantt-button" title="Exportar como imagen">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        Exportar
+                    </button>
+                    <label class="flex items-center text-sm text-gray-600 ml-3"><input id="toggle-today" type="checkbox" class="mr-2">Mostrar marcador de hoy</label>
+                </div>
+            </div>
+
+            <div class="gantt-chart relative" id="gantt-container">
+                <div id="tooltip" class="tooltip">
+                    <div class="tooltip-title"></div>
+                    <div class="tooltip-content"></div>
+                    <div class="tooltip-progress">
+                        <div class="tooltip-progress-bar"></div>
+                    </div>
+                    <div class="tooltip-footer"></div>
+                </div>
+                <!-- El contenido se genera aquí con JavaScript -->
+            </div>
+            
+            <p class="mt-4 text-sm text-gray-500">Nota: La escala de tiempo se basa en las **12 semanas** que dura el proyecto (7 días por unidad).</p>
+        </section>
+
+        <section class="p-6 border border-primary rounded-xl" style="background: rgba(229, 230, 233, 0.08);">
+            <h2 class="text-2xl fw-bold text-primary mb-4">Alineación con Kendall &amp; Kendall (SDLC)</h2>
+            <p class="mb-3 text-white">Tu plan detallado cumple con la estructura del Ciclo de Vida del Desarrollo de Sistemas (SDLC) propuesta por Kendall &amp; Kendall, asegurando una aproximación rigurosa al desarrollo de software:</p>
+            <ul class="list-disc pl-5 text-white">
+                <li><strong>Fase 1 (Análisis y Planificación):</strong> Corresponde a las fases 1, 2 y parte de la 3 (Identificación de Problemas y Determinación de Requisitos). Las tareas <strong>1.2 a 1.4</strong> son clave aquí.</li>
+                <li><strong>Fase 2 (Diseño):</strong> Corresponde a la fase 4 (Diseño del Sistema Recomendado). Las tareas <strong>2.1 a 2.4</strong> producen los planos necesarios (DB, Arquitectura, UI).</li>
+                <li><strong>Fase 3 (Implementación):</strong> Corresponde a la fase 5 (Desarrollo y Documentación del Software). Las tareas <strong>3.2 a 3.7</strong> son la codificación real.</li>
+                <li><strong>Fase 4 (Pruebas):</strong> Corresponde a la fase 6 (Prueba y Mantenimiento). Las tareas <strong>4.1 a 4.4</strong> garantizan la calidad y estabilidad del producto.</li>
+                <li><strong>Fase 5 (Despliegue):</strong> Corresponde a la fase 7 (Implementación y Evaluación). Las tareas <strong>5.1 a 5.4</strong> representan la entrega final al cliente.</li>
+            </ul>
+        </section>
+
+    </div>
+
+    <script>
+        const tasks = [
+            { id: 'Fase 1', name: 'FASE 1: ANÁLISIS Y PLANIFICACIÓN', phase: 1, duration: 0, start: '2025-08-31', end: '2025-08-31', critical: false, milestone: false, isPhase: true, progress: 100 },
+            { id: 'T1.1', name: 'Reunion Kick-off', phase: 1, duration: 1, start: '2025-08-31', end: '2025-08-31', critical: true, milestone: false, progress: 100, dependencies: [] },
+            { id: 'T1.2', name: 'Analisis Requisitos', phase: 1, duration: 3, start: '2025-09-01', end: '2025-09-03', critical: true, milestone: false, progress: 100, dependencies: ['T1.1'] },
+            { id: 'T1.3', name: 'Arbol Problemas', phase: 1, duration: 2, start: '2025-09-04', end: '2025-09-05', critical: true, milestone: false, progress: 100, dependencies: ['T1.2'] },
+            { id: 'T1.4', name: 'Catalogo Requisitos', phase: 1, duration: 3, start: '2025-09-08', end: '2025-09-10', critical: true, milestone: false, progress: 100, dependencies: ['T1.3'] },
+            { id: 'T1.5', name: 'Stack Tecnologico M1', phase: 1, duration: 1, start: '2025-09-11', end: '2025-09-11', critical: true, milestone: true, progress: 100, dependencies: ['T1.4'] },
+
+            { id: 'Fase 2', name: 'FASE 2: DISEÑO DEL SISTEMA', phase: 2, duration: 0, start: '2025-09-12', end: '2025-09-12', critical: false, milestone: false, isPhase: true, progress: 100 },
+            { id: 'T2.1', name: 'Diseno BD DDL', phase: 2, duration: 3, start: '2025-09-12', end: '2025-09-16', critical: true, milestone: false, progress: 100, dependencies: ['T1.5'] },
+            { id: 'T2.2', name: 'Diseno Arquitectura', phase: 2, duration: 2, start: '2025-09-17', end: '2025-09-18', critical: true, milestone: false, progress: 100, dependencies: ['T2.1'] },
+            { id: 'T2.3', name: 'Diseno Interfaz UI UX', phase: 2, duration: 4, start: '2025-09-19', end: '2025-09-24', critical: true, milestone: false, progress: 100, dependencies: ['T2.2'] },
+            { id: 'T2.4', name: 'Casos de Uso M2', phase: 2, duration: 1, start: '2025-09-25', end: '2025-09-25', critical: true, milestone: true, progress: 100, dependencies: ['T2.3'] },
+
+            { id: 'Fase 3', name: 'FASE 3: IMPLEMENTACIÓN Y DESARROLLO', phase: 3, duration: 0, start: '2025-09-26', end: '2025-09-26', critical: false, milestone: false, isPhase: true, progress: 80 },
+            { id: 'T3.1', name: 'Configuracion Entorno', phase: 3, duration: 1, start: '2025-09-26', end: '2025-09-26', critical: true, milestone: false, progress: 100, dependencies: ['T2.4'] },
+            { id: 'T3.2', name: 'Modulo Autenticacion', phase: 3, duration: 4, start: '2025-09-29', end: '2025-10-02', critical: true, milestone: false, progress: 100, dependencies: ['T3.1'] },
+            { id: 'T3.3', name: 'Modulo Catalogo Productos', phase: 3, duration: 4, start: '2025-10-03', end: '2025-10-08', critical: true, milestone: false, progress: 100, dependencies: ['T3.2'] },
+            { id: 'T3.6', name: 'Panel Admin Productos (Paralelo)', phase: 3, duration: 3, start: '2025-10-09', end: '2025-10-11', critical: false, milestone: false, progress: 90, dependencies: ['T3.3'] },
+            { id: 'T3.4', name: 'Desarrollo Carrito', phase: 3, duration: 4, start: '2025-10-12', end: '2025-10-15', critical: true, milestone: false, progress: 85, dependencies: ['T3.3'] },
+            { id: 'T3.5', name: 'Checkout y Registro Pedidos', phase: 3, duration: 4, start: '2025-10-16', end: '2025-10-19', critical: true, milestone: false, progress: 60, dependencies: ['T3.4'] },
+            { id: 'T3.7', name: 'Panel Admin Pedidos M3', phase: 3, duration: 3, start: '2025-10-20', end: '2025-10-22', critical: true, milestone: true, progress: 40, dependencies: ['T3.5', 'T3.6'] },
+
+            { id: 'Fase 4', name: 'FASE 4: PRUEBAS Y VALIDACIÓN', phase: 4, duration: 0, start: '2025-10-23', end: '2025-10-23', critical: false, milestone: false, isPhase: true, progress: 20 },
+            { id: 'T4.1', name: 'Pruebas Unitarias', phase: 4, duration: 3, start: '2025-10-23', end: '2025-10-25', critical: true, milestone: false, progress: 30, dependencies: ['T3.7'] },
+            { id: 'T4.2', name: 'Pruebas Integracion', phase: 4, duration: 3, start: '2025-10-26', end: '2025-10-28', critical: true, milestone: false, progress: 20, dependencies: ['T4.1'] },
+            { id: 'T4.3', name: 'Pruebas Sistema y UAT', phase: 4, duration: 3, start: '2025-10-29', end: '2025-10-31', critical: true, milestone: false, progress: 10, dependencies: ['T4.2'] },
+            { id: 'T4.4', name: 'Correccion Bugs M4', phase: 4, duration: 2, start: '2025-11-01', end: '2025-11-02', critical: true, milestone: true, progress: 0, dependencies: ['T4.3'] },
+
+            { id: 'Fase 5', name: 'FASE 5: DESPLIEGUE Y CIERRE', phase: 5, duration: 0, start: '2025-11-03', end: '2025-11-03', critical: false, milestone: false, isPhase: true, progress: 0 },
+            { id: 'T5.1', name: 'Configuracion Produccion', phase: 5, duration: 2, start: '2025-11-03', end: '2025-11-04', critical: true, milestone: false, progress: 0, dependencies: ['T4.4'] },
+            { id: 'T5.2', name: 'Migracion BD y Codigo', phase: 5, duration: 2, start: '2025-11-05', end: '2025-11-06', critical: true, milestone: false, progress: 0, dependencies: ['T5.1'] },
+            { id: 'T5.3', name: 'Documentacion Final', phase: 5, duration: 2, start: '2025-11-07', end: '2025-11-08', critical: true, milestone: false, progress: 0, dependencies: ['T5.2'] },
+            { id: 'T5.4', name: 'Cierre Formal M5', phase: 5, duration: 2, start: '2025-11-09', end: '2025-11-10', critical: true, milestone: true, progress: 0, dependencies: ['T5.3'] },
+        ];
+
+    const projectStart = new Date('2025-08-31');
+    const projectEnd = new Date('2025-11-10');
+    const totalDurationDays = 72; // 72 dias corridos de 31/08/2025 a 10/11/2025
+
+        // Guardado simple de estado para colapsado y zoom
+        const collapsedPhases = JSON.parse(localStorage.getItem('ganttCollapsed') || '{}');
+        let zoomLevel = parseFloat(localStorage.getItem('ganttZoom')) || 1;
+
+        // Función para calcular la diferencia en días desde el inicio del proyecto
+        function getDayDifference(date) {
+            const timeDiff = date.getTime() - projectStart.getTime();
+            // Sumamos 1 día (86400000ms) para incluir el día de inicio
+            return Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+        }
+
+        function saveCollapsed() {
+            localStorage.setItem('ganttCollapsed', JSON.stringify(collapsedPhases));
+        }
+        function saveZoom() {
+            localStorage.setItem('ganttZoom', String(zoomLevel));
+        }
+
+        // Función principal para dibujar el diagrama
+        function drawGantt() {
+            const container = document.getElementById('gantt-container');
+            container.innerHTML = '';
+            const weeksContainer = document.createElement('div');
+            weeksContainer.className = 'timeline-container sticky top-0 bg-white z-20 border-b-2 border-gray-300';
+
+            // 1. Dibuja el encabezado de la línea de tiempo (Semanas)
+            const firstHeader = document.createElement('div');
+            firstHeader.className = 'timeline-header text-left font-bold text-gray-700';
+            firstHeader.textContent = 'Tarea (ID)';
+            weeksContainer.appendChild(firstHeader);
+
+            const numWeeks = 12; // 12 semanas visuales
+            for (let i = 0; i < numWeeks; i++) {
+                const weekHeader = document.createElement('div');
+                weekHeader.className = 'timeline-header text-xs text-gray-600 bg-gray-50';
+                // Añadimos rango aproximado de fechas por semana
+                const weekStart = new Date(projectStart.getTime() + i * 7 * 24 * 3600 * 1000);
+                const label = `${weekStart.getDate()}/${(weekStart.getMonth()+1)}`;
+                weekHeader.textContent = `Semana ${i + 1} (${label})`;
+                weeksContainer.appendChild(weekHeader);
+            }
+            container.appendChild(weeksContainer);
+
+            // Calcula ancho disponible y aplica zoom
+            const timelineWidth = Math.max(container.clientWidth - 200, 800);
+            const pixelsPerDay = (timelineWidth / totalDurationDays) * zoomLevel;
+
+            // 2. Dibuja las tareas
+            let rowCounter = 0;
+
+            tasks.forEach(task => {
+                if (task.isPhase) {
+                    const phaseDiv = document.createElement('div');
+                    phaseDiv.className = 'phase-name';
+                    phaseDiv.dataset.phase = task.phase;
+
+                    const left = document.createElement('div');
+                    left.textContent = task.name;
+
+                    const toggle = document.createElement('div');
+                    toggle.className = 'phase-toggle text-sm text-gray-600';
+                    const isCollapsed = !!collapsedPhases[String(task.phase)];
+                    toggle.textContent = isCollapsed ? '►' : '▼';
+
+                    phaseDiv.appendChild(left);
+                    phaseDiv.appendChild(toggle);
+
+                    phaseDiv.addEventListener('click', () => {
+                        const key = String(task.phase);
+                        collapsedPhases[key] = !collapsedPhases[key];
+                        saveCollapsed();
+                        drawGantt();
+                    });
+
+                    container.appendChild(phaseDiv);
+                    rowCounter = 0;
+                    return;
+                }
+
+                const taskRow = document.createElement('div');
+                taskRow.className = 'task-row hover:bg-blue-50';
+                taskRow.dataset.phase = task.phase;
+
+                // Aplicamos colapsado si la fase está colapsada
+                if (collapsedPhases[String(task.phase)]) {
+                    taskRow.classList.add('hidden-by-phase');
+                }
+
+                const taskNameDiv = document.createElement('div');
+                taskNameDiv.className = 'task-name text-gray-800';
+                taskNameDiv.textContent = `${task.id}: ${task.name}`;
+                taskRow.appendChild(taskNameDiv);
+
+                // Celdas de la cuadrícula de fondo (para alineación visual)
+                const numWeeksLocal = 12;
+                for (let i = 0; i < numWeeksLocal; i++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'timeline-cell h-full border-r border-gray-100/50';
+                    taskRow.appendChild(cell);
+                }
+
+                // Dibuja la barra de la tarea
+                const startDay = getDayDifference(new Date(task.start));
+                const endDay = getDayDifference(new Date(task.end));
+                const durationDays = endDay - startDay + 1;
+
+                const barDiv = document.createElement('div');
+                const barStartOffset = (startDay - 1) * pixelsPerDay;
+                const barWidth = Math.max(durationDays * pixelsPerDay, 6); // ancho mínimo para verse
+
+                barDiv.style.left = `calc(200px + ${barStartOffset}px)`;
+                // Inicialmente lo dejamos en 0 para animar desde cero
+                barDiv.style.width = `0px`;
+
+                if (task.milestone) {
+                    // Hitos son puntos
+                    barDiv.className = 'task-bar-milestone bg-blue-500';
+                    barDiv.style.left = `calc(200px + ${barStartOffset + (barWidth / 2)}px)`;
+                    barDiv.dataset.taskId = task.id;
+                    // Pulsito inicial
+                    barDiv.style.transform = 'translate(-50%, -50%) scale(0.6)';
+                    setTimeout(() => { barDiv.style.transform = 'translate(-50%, -50%) scale(1)'; }, 120);
+                } else {
+                    // Tareas normales/criticas
+                    barDiv.className = task.critical ? 'task-bar task-bar-crit animate-from-zero' : 'task-bar task-bar-normal animate-from-zero';
+                    barDiv.textContent = task.id;
+                    barDiv.dataset.taskId = task.id;
+                    
+                    // Barra de progreso
+                    if (task.progress !== undefined) {
+                        const progressBar = document.createElement('div');
+                        progressBar.className = 'progress-bar';
+                        progressBar.style.width = `${task.progress}%`;
+                        barDiv.insertBefore(progressBar, barDiv.firstChild);
+                    }
+                }
+
+                // Event listeners para tooltip
+                const tooltip = document.getElementById('tooltip');
+                barDiv.addEventListener('mouseenter', (e) => {
+                    const taskData = tasks.find(t => t.id === task.id);
+                    if (!taskData) return;
+                    
+                    tooltip.querySelector('.tooltip-title').textContent = taskData.id;
+                    const content = tooltip.querySelector('.tooltip-content');
+                    content.innerHTML = `
+                        <div>${taskData.name}</div>
+                        <div class="text-sm text-gray-400">
+                            ${taskData.start} - ${taskData.end}<br>
+                            Duración: ${durationDays} días
+                        </div>
+                    `;
+                    
+                    if (taskData.progress !== undefined) {
+                        tooltip.querySelector('.tooltip-progress-bar').style.width = `${taskData.progress}%`;
+                        tooltip.querySelector('.tooltip-footer').textContent = `Progreso: ${taskData.progress}%`;
+                    }
+                    
+                    const deps = taskData.dependencies?.length > 0 
+                        ? `<div class="text-xs text-gray-400 mt-1">Depende de: ${taskData.dependencies.join(', ')}</div>` 
+                        : '';
+                    content.innerHTML += deps;
+                    
+                    tooltip.style.left = `${e.pageX}px`;
+                    tooltip.style.top = `${e.pageY - 120}px`;
+                    tooltip.classList.add('visible');
+                });
+                
+                barDiv.addEventListener('mouseleave', () => {
+                    tooltip.classList.remove('visible');
+                });
+
+                taskRow.appendChild(barDiv);
+                container.appendChild(taskRow);
+                rowCounter++;
+
+                // Animación: expandir a su ancho real
+                requestAnimationFrame(() => {
+                    // pequeño retardo visual
+                    setTimeout(() => {
+                        barDiv.style.width = `${barWidth}px`;
+                        barDiv.classList.remove('animate-from-zero');
+                    }, 40 + (rowCounter * 10));
+                });
+            });
+
+            // 3. Dibuja el marcador de "Hoy" (se muestra/oculta según el checkbox)
+            const today = new Date();
+            const todayDay = getDayDifference(today);
+
+            if (todayDay >= 1 && todayDay <= totalDurationDays) {
+                const todayMarker = document.createElement('div');
+                todayMarker.className = 'today-marker';
+                const todayOffset = (todayDay - 1) * pixelsPerDay;
+                todayMarker.style.left = `calc(200px + ${todayOffset}px)`;
+                // Mostrar/ocultar según el checkbox (inline style sobrescribe la regla CSS que por defecto oculta el marcador)
+                const showToday = document.getElementById('toggle-today') ? document.getElementById('toggle-today').checked : false;
+                todayMarker.style.display = showToday ? '' : 'none';
+                container.appendChild(todayMarker);
+            }
+
+            // Mantener scroll centrado aproximado cuando se redibuja tras zoom
+            const wrapper = document.querySelector('.gantt-chart');
+            if (wrapper) {
+                // intenta mantener la misma posición relativa
+                // no hacemos cambios complejos, dejamos que el usuario ajuste el scroll
+            }
+
+            // Actualiza el texto del botón de reset para mostrar el porcentaje
+            const resetBtn = document.getElementById('zoom-reset');
+            if (resetBtn) resetBtn.textContent = `${Math.round(zoomLevel*100)}%`;
+        }
+
+        // Inicialización: configura el checkbox desde localStorage y dibuja
+        window.onload = () => {
+            const toggle = document.getElementById('toggle-today');
+            if (toggle) {
+                // Por defecto, lo dejamos desactivado (coincide con el CSS oculto). El usuario puede activarlo.
+                const stored = localStorage.getItem('showToday');
+                toggle.checked = stored === 'true';
+                toggle.addEventListener('change', (e) => {
+                    localStorage.setItem('showToday', e.target.checked);
+                    drawGantt();
+                });
+            }
+
+            // Zoom buttons
+            const zin = document.getElementById('zoom-in');
+            const zout = document.getElementById('zoom-out');
+            const zreset = document.getElementById('zoom-reset');
+            const collapseAllBtn = document.getElementById('collapse-all');
+
+            function setZoom(newZoom) {
+                zoomLevel = Math.max(0.5, Math.min(2, newZoom));
+                saveZoom();
+                drawGantt();
+            }
+
+            if (zin) zin.addEventListener('click', () => setZoom(zoomLevel + 0.15));
+            if (zout) zout.addEventListener('click', () => setZoom(zoomLevel - 0.15));
+            if (zreset) zreset.addEventListener('click', () => setZoom(1));
+
+            if (collapseAllBtn) collapseAllBtn.addEventListener('click', () => {
+                // determina si hay alguna fase abierta -> colapsa todas; si todas colapsadas -> expande todas
+                const phases = Array.from(new Set(tasks.filter(t => t.isPhase).map(p => String(p.phase))));
+                const anyOpen = phases.some(p => !collapsedPhases[p]);
+                phases.forEach(p => { collapsedPhases[p] = anyOpen ? true : false; });
+                saveCollapsed();
+                drawGantt();
+            });
+
+            // Actualiza los textos de resumen
+            const startText = document.getElementById('project-start-text');
+            const endText = document.getElementById('project-end-text');
+            if (startText) startText.textContent = '31/08/2025';
+            if (endText) endText.textContent = '10/11/2025';
+
+            // Calcular y mostrar el progreso general
+            const overallProgressEl = document.getElementById('overall-progress');
+            if (overallProgressEl) {
+                // Filtrar solo tareas (no fases)
+                const realTasks = tasks.filter(t => !t.isPhase && typeof t.progress === 'number');
+                const totalProgress = realTasks.reduce((sum, t) => sum + t.progress, 0);
+                const avgProgress = realTasks.length > 0 ? Math.round(totalProgress / realTasks.length) : 0;
+                overallProgressEl.textContent = avgProgress;
+            }
+
+            // Configurar el botón de exportar
+            const exportBtn = document.getElementById('export-chart');
+            if (exportBtn) {
+                exportBtn.addEventListener('click', async () => {
+                    try {
+                        exportBtn.disabled = true;
+                        exportBtn.textContent = 'Exportando...';
+
+                        const ganttContainer = document.getElementById('gantt-container');
+                        if (!ganttContainer) throw new Error('No se encontró el contenedor del diagrama.');
+
+                        const tooltip = document.getElementById('tooltip');
+                        if (tooltip) tooltip.style.display = 'none'; // Ocultar tooltip durante la captura
+
+                        // Asegurarnos de que todas las barras estén expandidas
+                        const bars = ganttContainer.querySelectorAll('.task-bar');
+                        if (bars && bars.length > 0) {
+                            bars.forEach(bar => {
+                                if (bar && bar.classList) bar.classList.remove('animate-from-zero');
+                            });
+                        }
+
+                        // Forzar el contenedor a mostrar todo el contenido sin scroll
+                        const originalOverflow = ganttContainer.style.overflow;
+                        ganttContainer.style.overflow = 'visible';
+
+                        // Usar getBoundingClientRect para obtener el tamaño real
+                        const rect = ganttContainer.getBoundingClientRect();
+                        const options = {
+                            backgroundColor: '#ffffff',
+                            scale: 2, // mejor calidad
+                            useCORS: true,
+                            logging: false,
+                            width: Math.ceil(rect.width),
+                            height: Math.ceil(rect.height)
+                        };
+
+                        const canvas = await html2canvas(ganttContainer, options);
+
+                        // Restaurar estilos
+                        ganttContainer.style.overflow = originalOverflow;
+                        if (tooltip) tooltip.style.display = '';
+
+                        // Crear y descargar la imagen
+                        const link = document.createElement('a');
+                        link.download = 'diagrama-gantt.png';
+                        link.href = canvas.toDataURL('image/png');
+                        link.click();
+                    } catch (err) {
+                        console.error('Error al exportar:', err);
+                        alert('Hubo un error al exportar el diagrama. Por favor, intente nuevamente.');
+                    } finally {
+                        exportBtn.disabled = false;
+                        exportBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Exportar';
+                    }
+                });
+            }
+
+            drawGantt();
+        };
+
+        window.onresize = () => {
+            // Re-dibuja el Gantt al cambiar el tamaño para ajustar la escala
+            drawGantt();
+        };
+
+        // Fondo animado de partículas azul eléctrico
+        window.addEventListener('DOMContentLoaded', () => {
+    const canvas = document.getElementById('bg-particles');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let w = window.innerWidth;
+    let h = window.innerHeight;
+    canvas.width = w;
+    canvas.height = h;
+
+    function resize() {
+        w = window.innerWidth;
+        h = window.innerHeight;
+        canvas.width = w;
+        canvas.height = h;
+    }
+    window.addEventListener('resize', resize);
+
+    // Configuración de partículas
+    const particles = [];
+    const numParticles = Math.floor((w * h) / 3500);
+    for (let i = 0; i < numParticles; i++) {
+        particles.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            r: 1.8 + Math.random() * 2.2,
+            dx: (Math.random() - 0.5) * 0.7,
+            dy: (Math.random() - 0.5) * 0.7,
+            alpha: 0.7 + Math.random() * 0.3
+        });
+    }
+
+    function drawParticles() {
+        ctx.clearRect(0, 0, w, h);
+        for (const p of particles) {
+            ctx.save();
+            ctx.globalAlpha = p.alpha;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0, 200, 255, 0.9)'; // azul eléctrico
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 12;
+            ctx.fill();
+            ctx.restore();
+
+            // Movimiento
+            p.x += p.dx;
+            p.y += p.dy;
+            // Rebote en bordes
+            if (p.x < 0 || p.x > w) p.dx *= -1;
+            if (p.y < 0 || p.y > h) p.dy *= -1;
+        }
+        requestAnimationFrame(drawParticles);
+    }
+    drawParticles();
+});
+    </script>
+</body>
+    <footer class="mt-12 py-6 text-center text-xs text-white bg- border-t border-gray-200">
+        &copy; 2025. Esta página fue creada solo para el uso de <strong>The Order Flow y sus integrantes</strong>. <br>
+        By Ticona Adalit
+    </footer>
+</html>
