@@ -267,28 +267,6 @@
             </div>
 
             <!-- Contenedor del diagrama de Gantt generado por JS -->
-            <div class="mb-4 flex items-center justify-between">
-                <div class="text-sm text-gray-600">
-                    <div>Inicio: <strong id="project-start-text">31/08/2025</strong> — Fin estimado: <strong id="project-end-text">10/11/2025</strong></div>
-                    <div class="mt-1 text-xs text-gray-500">Progreso general: <strong id="overall-progress">0</strong>%</div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <div class="gantt-controls mr-2">
-                        <button id="zoom-out" class="gantt-button" title="Alejar">-</button>
-                        <button id="zoom-reset" class="gantt-button" title="Resetear zoom">100%</button>
-                        <button id="zoom-in" class="gantt-button" title="Acercar">+</button>
-                    </div>
-                    <button id="collapse-all" class="gantt-button" title="Colapsar/Expandir todas las fases">Colapsar/Expandir</button>
-                    <button id="export-chart" class="gantt-button" title="Exportar como imagen">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                        </svg>
-                        Exportar
-                    </button>
-                    <label class="flex items-center text-sm text-gray-600 ml-3"><input id="toggle-today" type="checkbox" class="mr-2">Mostrar marcador de hoy</label>
-                </div>
-            </div>
-
             <div class="gantt-chart relative" id="gantt-container">
                 <div id="tooltip" class="tooltip">
                     <div class="tooltip-title"></div>
@@ -300,8 +278,7 @@
                 </div>
                 <!-- El contenido se genera aquí con JavaScript -->
             </div>
-            
-            <p class="mt-4 text-sm text-gray-500">Nota: La escala de tiempo se basa en las **12 semanas** que dura el proyecto (7 días por unidad).</p>
+            <p class="mt-4 text-sm text-gray-500">Nota: La escala de tiempo se basa en las <strong>12 semanas</strong> que dura el proyecto (7 días por unidad).</p>
         </section>
 
         <section class="p-6 border border-primary rounded-xl" style="background: rgba(229, 230, 233, 0.08);">
